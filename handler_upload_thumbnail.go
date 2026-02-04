@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"crypto/rand"
+	"encoding/base64"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -24,6 +26,15 @@ func extension(mediaType string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func randomFileName(ext string) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	name := base64.RawURLEncoding.EncodeToString(b)
+	return name + ext, nil
 }
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +91,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	filename := videoID.String() + ext
+	filename, err := randomFileName(ext)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't generate random file name", err)
+		return
+	}
 	path := filepath.Join(cfg.assetsRoot, filename)
 
 	destination, err := os.Create(path)
