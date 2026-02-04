@@ -25,6 +25,7 @@ type apiConfig struct {
 	s3Region         string
 	s3CfDistribution string
 	port             string
+	s3Client				 *s3.Client
 }
 
 type thumbnail struct {
