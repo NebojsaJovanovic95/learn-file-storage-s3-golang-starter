@@ -1,14 +1,30 @@
 package main
 
 import (
+	"os"
 	"io"
 	"fmt"
 	"net/http"
-	"encoding/base64"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
+
+func extension(mediaType string) (string, bool) {
+	switch mediaType {
+	case "image/png":
+		return ".png", true
+	case "image/jpeg":
+		return ".jpg", true
+	case "image/jpg":
+		return ".jpg", true
+	case "image/webp":
+		return ".webp", true
+	default:
+		return "", false
+	}
+}
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
 	videoIDString := r.PathValue("videoID")
@@ -47,20 +63,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	defer file.Close()
 
 	mediaType := header.Header.Get("Content-Type")
-
-	imageData, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "couldn't read image data", err)
+	ext, ok := extension(mediaType)
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "unsupported media type", nil)
 		return
 	}
-
-	encoded := base64.StdEncoding.EncodeToString(imageData)
-
-	dataURL := fmt.Sprintf(
-		"data:%s;base64,%s",
-		mediaType,
-		encoded,
-	)
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -72,14 +79,30 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "Not the video owner", nil)
 		return
 	}
-	
-	video.ThumbnailURL = new(string)
-	*video.ThumbnailURL = dataURL
-	
-	if err := cfg.db.UpdateVideo(video); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "couldn't update video", err)
+
+	filename := videoID.String() + ext
+	path := filepath.Join(cfg.assetsRoot, filename)
+
+	destination, err := os.Create(path)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couln't create file", err)
+		return
+	}
+	defer destination.Close()
+
+	if _, err := io.Copy(destination, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couln't save file", err)
 		return
 	}
 
+	// saving url to db
+	url := "http://localhost:" + cfg.port + "/assets/" + filename
+	video.ThumbnailURL = &url
+
+	if err := cfg.db.UpdateVideo(video); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couln't update video", err)
+		return
+	}
+	
 	respondWithJSON(w, http.StatusOK, video)
 }
