@@ -25,8 +25,11 @@ type ffprobeOutput struct {
 
 func getVideoAspectRatio(filePath string) (string, error) {
 	cmd := exec.Command(
-		"ffprobe -v error -print_format json -show_streams ",
-		filePath,
+    "ffprobe",
+    "-v", "error",
+    "-print_format", "json",
+    "-show_streams",
+    filePath,
 	)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -37,9 +40,8 @@ func getVideoAspectRatio(filePath string) (string, error) {
 
 	var probe ffprobeOutput
 	if err := json.Unmarshal(stdout.Bytes(), &probe); err != nil {
-		return "", fmt.Errorf("no streams found")
+		return "", fmt.Errorf("failed to parse ffprobe output: %w", err)
 	}
-
 	if len(probe.Streams) == 0 {
 		return "", fmt.Errorf("no streams found")
 	}
@@ -125,8 +127,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "couldn't create temporary video file", err)
 		return
 	}
-	defer tempFile.Close()
 	defer os.Remove(tempFile.Name())
+
+	if _, err := io.Copy(tempFile, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't save temp file", err)
+		return
+	}
+
+	tempFile.Close()
 
 	ratio, err := getVideoAspectRatio(tempFile.Name())
 	if err != nil {
@@ -136,15 +144,12 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	prefix := aspectToPrefix(ratio)
 
-	if _, err := io.Copy(tempFile, file); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "couldn't save temp file", err)
+	tempFile, err = os.Open(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couln't reopen tempFile", err)
 		return
 	}
-
-	if _, err := tempFile.Seek(0, io.SeekStart); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "couln't reset pointer in temp file", err)
-		return
-	}
+	defer tempFile.Close()
 
 	s3Key, err := randomFileName(".mp4")
 	if err != nil {
