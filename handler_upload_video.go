@@ -4,8 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"io"
-	"time"
-	"strings"
 	"fmt"
 	"context"
 	"mime"
@@ -16,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 )
 
 type ffprobeOutput struct {
@@ -96,29 +93,6 @@ func aspectToPrefix(r string) string {
 	default:
 		return "other"
 	}
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil || *video.VideoURL == "" {
-		return video, nil
-	}
-
-	parts := strings.Split(*video.VideoURL, ",")
-
-	if len(parts) != 2 {
-		return video, nil
-	}
-
-	bucket := parts[0]
-	key := parts[1]
-
-	signedURL, err := generatePresignedURL(cfg.s3Client, bucket, key, 5*time.Minute)
-	if err != nil {
-		return video, err
-	}
-
-	video.VideoURL = &signedURL
-	return video, nil
 }
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
